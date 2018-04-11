@@ -38,4 +38,12 @@ public class OIDCJettyHttpFacade extends JettyHttpFacade implements OIDCHttpFaca
         return (KeycloakSecurityContext)request.getAttribute(KeycloakSecurityContext.class.getName());
     }
 
+    public void bufferRequest()
+    {
+    	if(request instanceof BufferedRequest)
+    	{
+    		((BufferedRequest) request).moveRequestBodyToBuffer();
+    	}
+
+    }
 }
