@@ -21,23 +21,16 @@ import org.keycloak.authorization.common.KeycloakIdentity;
 import org.keycloak.authorization.model.Resource;
 import org.keycloak.authorization.model.ResourceServer;
 import org.keycloak.authorization.model.Scope;
-import org.keycloak.models.ClientModel;
-import org.keycloak.representations.idm.authorization.PermissionRequest;
-import org.keycloak.representations.idm.authorization.PermissionResponse;
-import org.keycloak.authorization.store.ResourceStore;
+import org.keycloak.authorization.protection.permission.representation.PermissionRequest;
+import org.keycloak.authorization.protection.permission.representation.PermissionResponse;
+import org.keycloak.authorization.store.StoreFactory;
 import org.keycloak.jose.jws.JWSBuilder;
 import org.keycloak.models.KeyManager;
-import org.keycloak.models.utils.ModelToRepresentation;
-import org.keycloak.representations.idm.authorization.PermissionTicketToken;
-import org.keycloak.representations.idm.authorization.ResourceOwnerRepresentation;
 import org.keycloak.representations.idm.authorization.ResourceRepresentation;
 import org.keycloak.representations.idm.authorization.ScopeRepresentation;
 import org.keycloak.services.ErrorResponseException;
 
 import javax.ws.rs.core.Response;
-
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -58,119 +51,91 @@ public class AbstractPermissionService {
     }
 
     public Response create(List<PermissionRequest> request) {
-        if (request == null || request.isEmpty()) {
+        if (request == null) {
             throw new ErrorResponseException("invalid_permission_request", "Invalid permission request.", Response.Status.BAD_REQUEST);
         }
 
-        return Response.status(Response.Status.CREATED).entity(new PermissionResponse(createPermissionTicket(request))).build();
+        List<ResourceRepresentation> resource = verifyRequestedResource(request);
+
+        return Response.status(Response.Status.CREATED).entity(new PermissionResponse(createPermissionTicket(resource))).build();
     }
 
     private List<ResourceRepresentation> verifyRequestedResource(List<PermissionRequest> request) {
-        ResourceStore resourceStore = authorization.getStoreFactory().getResourceStore();
-        List<ResourceRepresentation> requestedResources = new ArrayList<>();
+        StoreFactory storeFactory = authorization.getStoreFactory();
+        return request.stream().map(request1 -> {
+            String resourceSetId = request1.getResourceSetId();
+            String resourceSetName = request1.getResourceSetName();
+            String resourceSetUri = request1.getResourceSetUri();
+            boolean resourceNotProvider = resourceSetId == null && resourceSetName == null;
 
-        for (PermissionRequest permissionRequest : request) {
-            String resourceSetId = permissionRequest.getResourceId();
-            List<Resource> resources = new ArrayList<>();
-
-            if (resourceSetId == null) {
-                if (permissionRequest.getScopes() == null || permissionRequest.getScopes().isEmpty()) {
-                    throw new ErrorResponseException("invalid_resource_id", "Resource id or name not provided.", Response.Status.BAD_REQUEST);
+            if (resourceNotProvider) {
+                if ((request1.getScopes() == null || request1.getScopes().isEmpty())) {
+                    throw new ErrorResponseException("invalid_resource_set_id", "Resource id or name not provided.", Response.Status.BAD_REQUEST);
                 }
-            } else {
-                Resource resource = resourceStore.findById(resourceSetId, resourceServer.getId());
+            }
 
-                if (resource != null) {
-                    resources.add(resource);
+            Resource resource = null;
+
+            if (!resourceNotProvider) {
+                if (resourceSetId != null) {
+                    resource = storeFactory.getResourceStore().findById(resourceSetId, resourceServer.getId());
                 } else {
-                    Resource userResource = resourceStore.findByName(resourceSetId, identity.getId(), this.resourceServer.getId());
+                    resource = storeFactory.getResourceStore().findByName(resourceSetName, this.resourceServer.getId());
+                }
 
-                    if (userResource != null) {
-                        resources.add(userResource);
+                if (resource == null) {
+                    if (resourceSetId != null) {
+                        throw new ErrorResponseException("nonexistent_resource_set_id", "Resource set with id[" + resourceSetId + "] does not exists in this server.", Response.Status.BAD_REQUEST);
+                    } else {
+                        throw new ErrorResponseException("nonexistent_resource_set_name", "Resource set with name[" + resourceSetName + "] does not exists in this server.", Response.Status.BAD_REQUEST);
                     }
+                }
+            }
 
-                    if (!identity.isResourceServer()) {
-                        Resource serverResource = resourceStore.findByName(resourceSetId, this.resourceServer.getId());
+            Set<ScopeRepresentation> scopes = verifyRequestedScopes(request1, resource);
 
-                        if (serverResource != null) {
-                            resources.add(serverResource);
+            if (resource != null) {
+                if (scopes.isEmpty() && !request1.getScopes().isEmpty()) {
+                    return new ResourceRepresentation(null, request1.getScopes().stream().map(ScopeRepresentation::new).collect(Collectors.toSet()), resourceSetUri, null);
+                }
+                ResourceRepresentation resourceRep = new ResourceRepresentation(resource.getName(), scopes, resourceSetUri, null);
+                resourceRep.setAttributes(request1.getAttributes());
+                return resourceRep;
+            }
+
+            return new ResourceRepresentation(null, scopes, resourceSetUri, null);
+        }).collect(Collectors.toList());
+    }
+
+    private Set<ScopeRepresentation> verifyRequestedScopes(PermissionRequest request, Resource resource) {
+        return request.getScopes().stream().map(scopeName -> {
+            if (resource != null) {
+                for (Scope scope : resource.getScopes()) {
+                    if (scope.getName().equals(scopeName)) {
+                        return new ScopeRepresentation(scopeName);
+                    }
+                }
+
+                for (Resource baseResource : authorization.getStoreFactory().getResourceStore().findByType(resource.getType(), resourceServer.getId())) {
+                    if (baseResource.getOwner().equals(resource.getResourceServer().getClientId())) {
+                        for (Scope baseScope : baseResource.getScopes()) {
+                            if (baseScope.getName().equals(scopeName)) {
+                                return new ScopeRepresentation(scopeName);
+                            }
                         }
                     }
                 }
 
-                if (resources.isEmpty()) {
-                    throw new ErrorResponseException("invalid_resource_id", "Resource set with id [" + resourceSetId + "] does not exists in this server.", Response.Status.BAD_REQUEST);
-                }
-            }
-
-            if (resources.isEmpty()) {
-                requestedResources.add(new ResourceRepresentation(null, verifyRequestedScopes(permissionRequest, null)));
-
+                return null;
             } else {
-                for (Resource resource : resources) {
-                    Set<ScopeRepresentation> scopes = verifyRequestedScopes(permissionRequest, resource);
-
-                    ResourceRepresentation representation = new ResourceRepresentation(resource.getName(), scopes);
-
-                    representation.setId(resource.getId());
-                    representation.setOwnerManagedAccess(resource.isOwnerManagedAccess());
-                    representation.setOwner(new ResourceOwnerRepresentation(resource.getOwner()));
-
-                    requestedResources.add(representation);
-                }
+                return new ScopeRepresentation(scopeName);
             }
-        }
-
-        return requestedResources;
+        }).filter(scopeRepresentation -> scopeRepresentation != null).collect(Collectors.toSet());
     }
 
-    private Set<ScopeRepresentation> verifyRequestedScopes(PermissionRequest request, Resource resource) {
-        Set<String> requestScopes = request.getScopes();
-
-        if (requestScopes == null) {
-            return Collections.emptySet();
-        }
-
-        ResourceStore resourceStore = authorization.getStoreFactory().getResourceStore();
-
-        return requestScopes.stream().map(scopeName -> {
-            Scope scope = null;
-
-            if (resource != null) {
-                scope = resource.getScopes().stream().filter(scope1 -> scope1.getName().equals(scopeName)).findFirst().orElse(null);
-
-                if (scope == null && resource.getType() != null) {
-                    scope = resourceStore.findByType(resource.getType(), resourceServer.getId()).stream()
-                            .filter(baseResource -> baseResource.getOwner().equals(resource.getResourceServer().getId()))
-                            .flatMap(resource1 -> resource1.getScopes().stream())
-                            .filter(baseScope -> baseScope.getName().equals(scopeName)).findFirst().orElse(null);
-                }
-            } else {
-                scope = authorization.getStoreFactory().getScopeStore().findByName(scopeName, resourceServer.getId());
-            }
-
-            if (scope == null) {
-                throw new ErrorResponseException("invalid_scope", "Scope [" + scopeName + "] is invalid", Response.Status.BAD_REQUEST);
-            }
-
-            return ModelToRepresentation.toRepresentation(scope);
-        }).collect(Collectors.toSet());
-    }
-
-    private String createPermissionTicket(List<PermissionRequest> request) {
-        List<PermissionTicketToken.ResourcePermission> permissions = verifyRequestedResource(request).stream().flatMap(resource -> {
-            List<PermissionTicketToken.ResourcePermission> perms = new ArrayList<>();
-            Set<ScopeRepresentation> scopes = resource.getScopes();
-
-            perms.add(new PermissionTicketToken.ResourcePermission(resource.getId(), scopes.stream().map(ScopeRepresentation::getName).collect(Collectors.toSet())));
-
-            return perms.stream();
-        }).collect(Collectors.toList());
-
+    private String createPermissionTicket(List<ResourceRepresentation> resources) {
         KeyManager.ActiveRsaKey keys = this.authorization.getKeycloakSession().keys().getActiveRsaKey(this.authorization.getRealm());
-        ClientModel targetClient = authorization.getRealm().getClientById(resourceServer.getId());
-
-        return new JWSBuilder().kid(keys.getKid()).jsonContent(new PermissionTicketToken(permissions, targetClient.getClientId(), this.identity.getAccessToken()))
+        return new JWSBuilder().kid(keys.getKid()).jsonContent(new PermissionTicket(resources, this.resourceServer.getId(), this.identity.getAccessToken()))
                 .rsa256(keys.getPrivateKey());
     }
 }
