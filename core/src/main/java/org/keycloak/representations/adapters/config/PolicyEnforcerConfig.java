@@ -17,56 +17,57 @@
  */
 package org.keycloak.representations.adapters.config;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import org.keycloak.representations.idm.authorization.ResourceRepresentation;
-import org.keycloak.representations.idm.authorization.ScopeRepresentation;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 /**
  * @author <a href="mailto:psilva@redhat.com">Pedro Igor</a>
  */
 public class PolicyEnforcerConfig {
 
+    @JsonProperty("create-resources")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Boolean createResources = Boolean.FALSE;
+
     @JsonProperty("enforcement-mode")
     private EnforcementMode enforcementMode = EnforcementMode.ENFORCING;
+
+    @JsonProperty("user-managed-access")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private UmaProtocolConfig userManagedAccess;
+
+    @JsonProperty("entitlement")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private EntitlementProtocolConfig entitlement;
 
     @JsonProperty("paths")
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     private List<PathConfig> paths = new ArrayList<>();
 
-    @JsonProperty("path-cache")
-    @JsonInclude(JsonInclude.Include.NON_EMPTY)
-    private PathCacheConfig pathCacheConfig;
-
-    @JsonProperty("lazy-load-paths")
-    private Boolean lazyLoadPaths = Boolean.FALSE;
+    @JsonProperty("online-introspection")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Boolean onlineIntrospection = Boolean.FALSE;
 
     @JsonProperty("on-deny-redirect-to")
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private String onDenyRedirectTo;
-
-    @JsonProperty("user-managed-access")
+    
+    @JsonProperty("extracted-attributes")
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    private UserManagedAccessConfig userManagedAccess;
+    private List<ExtractedAttributeConfig> extractedAttributes = new ArrayList<>();    
+    
+    public Boolean isCreateResources() {
+        return this.createResources;
+    }
 
     public List<PathConfig> getPaths() {
-        return this.paths;
-    }
-
-    public PathCacheConfig getPathCacheConfig() {
-        return pathCacheConfig;
-    }
-
-    public Boolean getLazyLoadPaths() {
-        return lazyLoadPaths;
-    }
-
-    public void setLazyLoadPaths(Boolean lazyLoadPaths) {
-        this.lazyLoadPaths = lazyLoadPaths;
+        return Collections.unmodifiableList(this.paths);
     }
 
     public EnforcementMode getEnforcementMode() {
@@ -77,63 +78,61 @@ public class PolicyEnforcerConfig {
         this.enforcementMode = enforcementMode;
     }
 
-    public UserManagedAccessConfig getUserManagedAccess() {
+    public UmaProtocolConfig getUserManagedAccess() {
         return this.userManagedAccess;
+    }
+
+    public EntitlementProtocolConfig getEntitlement() {
+        return this.entitlement;
+    }
+
+    public Boolean isOnlineIntrospection() {
+        return onlineIntrospection;
+    }
+
+    public void setCreateResources(Boolean createResources) {
+        this.createResources = createResources;
+    }
+
+    public void setOnlineIntrospection(Boolean onlineIntrospection) {
+        this.onlineIntrospection = onlineIntrospection;
     }
 
     public void setPaths(List<PathConfig> paths) {
         this.paths = paths;
     }
 
-    public void setPathCacheConfig(PathCacheConfig pathCacheConfig) {
-        this.pathCacheConfig = pathCacheConfig;
-    }
-
     public String getOnDenyRedirectTo() {
         return onDenyRedirectTo;
     }
 
-    public void setUserManagedAccess(UserManagedAccessConfig userManagedAccess) {
+    public void setUserManagedAccess(UmaProtocolConfig userManagedAccess) {
         this.userManagedAccess = userManagedAccess;
+    }
+
+    public void setEntitlement(EntitlementProtocolConfig entitlement) {
+        this.entitlement = entitlement;
     }
 
     public void setOnDenyRedirectTo(String onDenyRedirectTo) {
         this.onDenyRedirectTo = onDenyRedirectTo;
     }
 
-    public static class PathConfig {
+    public List<ExtractedAttributeConfig> getExtractedAttributes() {
+		return extractedAttributes;
+	}
 
-        public static PathConfig createPathConfig(ResourceRepresentation resourceDescription) {
-            PathConfig pathConfig = new PathConfig();
+	public void setExtractedAttributes(List<ExtractedAttributeConfig> extractedAttributes) {
+		this.extractedAttributes = extractedAttributes;
+	}
 
-            pathConfig.setId(resourceDescription.getId());
-            pathConfig.setName(resourceDescription.getName());
-
-            String uri = resourceDescription.getUri();
-
-            if (uri == null || "".equals(uri.trim())) {
-                throw new RuntimeException("Failed to configure paths. Resource [" + resourceDescription.getName() + "] has an invalid or empty URI [" + uri + "].");
-            }
-
-            pathConfig.setPath(uri);
-
-            List<String> scopeNames = new ArrayList<>();
-
-            for (ScopeRepresentation scope : resourceDescription.getScopes()) {
-                scopeNames.add(scope.getName());
-            }
-
-            pathConfig.setScopes(scopeNames);
-            pathConfig.setType(resourceDescription.getType());
-
-            return pathConfig;
-        }
+	public static class PathConfig {
 
         private String name;
         private String type;
         private String path;
         private List<MethodConfig> methods = new ArrayList<>();
-        private List<String> scopes = new ArrayList<>();
+        private List<String> scopes = Collections.emptyList();
         private String id;
 
         @JsonProperty("enforcement-mode")
@@ -210,12 +209,10 @@ public class PolicyEnforcerConfig {
                     '}';
         }
 
-        @JsonIgnore
         public boolean hasPattern() {
             return getPath().indexOf("{") != -1;
         }
 
-        @JsonIgnore
         public boolean isInstance() {
             return this.parentConfig != null;
         }
@@ -232,10 +229,7 @@ public class PolicyEnforcerConfig {
     public static class MethodConfig {
 
         private String method;
-        private List<String> scopes = new ArrayList<>();
-
-        @JsonProperty("scopes-enforcement-mode")
-        private ScopeEnforcementMode scopesEnforcementMode = ScopeEnforcementMode.ALL;
+        private List<String> scopes = Collections.emptyList();
 
         public String getMethod() {
             return method;
@@ -252,37 +246,6 @@ public class PolicyEnforcerConfig {
         public void setScopes(List<String> scopes) {
             this.scopes = scopes;
         }
-
-        public void setScopesEnforcementMode(ScopeEnforcementMode scopesEnforcementMode) {
-            this.scopesEnforcementMode = scopesEnforcementMode;
-        }
-
-        public ScopeEnforcementMode getScopesEnforcementMode() {
-            return scopesEnforcementMode;
-        }
-    }
-
-    public static class PathCacheConfig {
-
-        @JsonProperty("max-entries")
-        int maxEntries = 1000;
-        long lifespan = 30000;
-
-        public int getMaxEntries() {
-            return maxEntries;
-        }
-
-        public void setMaxEntries(int maxEntries) {
-            this.maxEntries = maxEntries;
-        }
-
-        public long getLifespan() {
-            return lifespan;
-        }
-
-        public void setLifespan(long lifespan) {
-            this.lifespan = lifespan;
-        }
     }
 
     public enum EnforcementMode {
@@ -291,13 +254,98 @@ public class PolicyEnforcerConfig {
         DISABLED
     }
 
-    public enum ScopeEnforcementMode {
-        ALL,
-        ANY,
-        DISABLED
-    }
-
-    public static class UserManagedAccessConfig {
+    public static class UmaProtocolConfig {
 
     }
+
+    public static class EntitlementProtocolConfig {
+
+    }
+    
+    public static class ExtractedAttributeConfig{
+        private String method;
+        private String operation;
+        private List<ExtractedValueConfig> values = new ArrayList<>();   
+        
+		public String getMethod() {
+			return method;
+		}
+		public void setMethod(String method) {
+			this.method = method;
+		}
+		public String getOperation() {
+			return operation;
+		}
+		public void setOperation(String operation) {
+			this.operation = operation;
+		}
+		public List<ExtractedValueConfig> getValues() {
+			return values;
+		}
+		public void setValues(List<ExtractedValueConfig> values) {
+			this.values = values;
+		}
+    }
+    
+    public static class ExtractedValueConfig{
+		private String location;
+        private String name;    	
+        private AttributeSource source = AttributeSource.HEADER; 
+        private String endpoint;
+        private Map<String, String> headers; 
+        private Map<String, String> properties;         
+        @JsonProperty("content-type")
+        private String type;
+        
+        public String getLocation() {
+			return location;
+		}
+		public void setLocation(String location) {
+			this.location = location;
+		}
+		public String getName() {
+			return name;
+		}
+		public void setName(String name) {
+			this.name = name;
+		}
+		public AttributeSource getSource() {
+			return source;
+		}
+		public void setSource(AttributeSource source) {
+			this.source = source;
+		}
+		public String getType() {
+			return type;
+		}
+		public void setType(String type) {
+			this.type = type;
+		}
+		public String getEndpoint() {
+			return endpoint;
+		}
+		public void setEndpoint(String endpoint) {
+			this.endpoint = endpoint;
+		}
+		public Map<String, String> getHeaders() {
+			return headers;
+		}
+		public void setHeaders(Map<String, String> headers) {
+			this.headers = headers;
+		}
+		public Map<String, String> getProperties() {
+			return properties;
+		}
+		public void setProperties(Map<String, String> properties) {
+			this.properties = properties;
+		}
+    }   
+    
+    public enum AttributeSource {
+        HEADER,
+        QUERY,
+        BODY,
+        ROUTE,
+        HTTPAPI
+    }    
 }
