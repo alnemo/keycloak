@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.keycloak.adapters;
 
 import org.apache.http.client.HttpClient;
@@ -22,21 +21,22 @@ import org.jboss.logging.Logger;
 import org.keycloak.adapters.authentication.ClientCredentialsProvider;
 import org.keycloak.adapters.authorization.PolicyEnforcer;
 import org.keycloak.adapters.rotation.PublicKeyLocator;
+import org.keycloak.authorization.client.util.InternalAccessToken;
 import org.keycloak.common.enums.RelativeUrlsUsed;
 import org.keycloak.common.enums.SslRequired;
 import org.keycloak.common.util.KeycloakUriBuilder;
 import org.keycloak.constants.ServiceUrlConstants;
 import org.keycloak.enums.TokenStore;
 import org.keycloak.representations.adapters.config.AdapterConfig;
+import org.keycloak.representations.adapters.config.PolicyEnforcerConfig.ExtractedValueConfig;
 
 import java.net.URI;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
- * @author <a href="mailto:brad.culley@spartasystems.com">Brad Culley</a>
- * @author <a href="mailto:john.ament@spartasystems.com">John D. Ament</a>
  * @version $Revision: 1 $
  */
 public class KeycloakDeployment {
@@ -68,7 +68,6 @@ public class KeycloakDeployment {
 
     protected String scope;
     protected SslRequired sslRequired = SslRequired.ALL;
-    protected int confidentialPort = -1;
     protected TokenStore tokenStore = TokenStore.SESSION;
     protected String stateCookieName = "OAuth_Token_Request_State";
     protected boolean useResourceRoleMappings;
@@ -76,7 +75,6 @@ public class KeycloakDeployment {
     protected int corsMaxAge = -1;
     protected String corsAllowedHeaders;
     protected String corsAllowedMethods;
-    protected String corsExposedHeaders;
     protected boolean exposeToken;
     protected boolean alwaysRefreshToken;
     protected boolean registerNodeAtStartup;
@@ -88,15 +86,11 @@ public class KeycloakDeployment {
     protected int minTimeBetweenJwksRequests;
     protected int publicKeyCacheTtl;
     private PolicyEnforcer policyEnforcer;
-
-    // https://tools.ietf.org/html/rfc7636
-    protected boolean pkce = false;
-    protected boolean ignoreOAuthQueryParameter;
     
-    protected Map<String, String> redirectRewriteRules;
-
-    protected boolean delegateBearerErrorResponseSending = false;
-
+    private Map<String, Map<String, List<ExtractedValueConfig>>> extractedAttributes = new HashMap<>();
+    private AbstractRouteInvoker routeInvoker;
+    
+        
     public KeycloakDeployment() {
     }
 
@@ -153,8 +147,6 @@ public class KeycloakDeployment {
         if (log.isDebugEnabled()) {
             log.debug("resolveUrls");
         }
-
-        authServerBaseUrl = authUrlBuilder.build().toString();
 
         String login = authUrlBuilder.clone().path(ServiceUrlConstants.AUTH_PATH).build(getRealm()).toString();
         authUrl = KeycloakUriBuilder.fromUri(login);
@@ -280,14 +272,6 @@ public class KeycloakDeployment {
         this.sslRequired = sslRequired;
     }
 
-    public int getConfidentialPort() {
-        return confidentialPort;
-    }
-
-    public void setConfidentialPort(int confidentialPort) {
-        this.confidentialPort = confidentialPort;
-    }
-
     public TokenStore getTokenStore() {
         return tokenStore;
     }
@@ -342,14 +326,6 @@ public class KeycloakDeployment {
 
     public void setCorsAllowedMethods(String corsAllowedMethods) {
         this.corsAllowedMethods = corsAllowedMethods;
-    }
-
-    public String getCorsExposedHeaders() {
-        return corsExposedHeaders;
-    }
-
-    public void setCorsExposedHeaders(String corsExposedHeaders) {
-        this.corsExposedHeaders = corsExposedHeaders;
     }
 
     public boolean isExposeToken() {
@@ -445,36 +421,20 @@ public class KeycloakDeployment {
         return policyEnforcer;
     }
 
-    // https://tools.ietf.org/html/rfc7636
-    public boolean isPkce() {
-        return pkce;
-    }
+	public Map<String, Map<String, List<ExtractedValueConfig>>> getExtractedAttributes() {
+		return extractedAttributes;
+	}
 
-    public void setPkce(boolean pkce) {
-        this.pkce = pkce;
-    }
+	public void setExtractedAttributes(Map<String, Map<String, List<ExtractedValueConfig>>> extractedAttributes) {
+		this.extractedAttributes = extractedAttributes;
+	}
 
-    public void setIgnoreOAuthQueryParameter(boolean ignoreOAuthQueryParameter) {
-        this.ignoreOAuthQueryParameter = ignoreOAuthQueryParameter;
-    }
+	public AbstractRouteInvoker getRouteInvoker() {
+		return routeInvoker;
+	}
 
-    public boolean isOAuthQueryParameterEnabled() {
-        return !this.ignoreOAuthQueryParameter;
-    }
+	public void setRouteInvoker(AbstractRouteInvoker routeInvoker) {
+		this.routeInvoker = routeInvoker;
+	}
 
-    public Map<String, String> getRedirectRewriteRules() {
-        return redirectRewriteRules;
-    }
-
-    public void setRewriteRedirectRules(Map<String, String> redirectRewriteRules) {
-        this.redirectRewriteRules = redirectRewriteRules;
-    }
-
-    public boolean isDelegateBearerErrorResponseSending() {
-        return delegateBearerErrorResponseSending;
-    }
-
-    public void setDelegateBearerErrorResponseSending(boolean delegateBearerErrorResponseSending) {
-        this.delegateBearerErrorResponseSending = delegateBearerErrorResponseSending;
-    }
 }

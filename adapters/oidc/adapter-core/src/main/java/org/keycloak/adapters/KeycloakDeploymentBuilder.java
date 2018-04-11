@@ -29,16 +29,19 @@ import org.keycloak.common.util.PemUtils;
 import org.keycloak.enums.TokenStore;
 import org.keycloak.representations.adapters.config.AdapterConfig;
 import org.keycloak.representations.adapters.config.PolicyEnforcerConfig;
+import org.keycloak.representations.adapters.config.PolicyEnforcerConfig.ExtractedAttributeConfig;
+import org.keycloak.representations.adapters.config.PolicyEnforcerConfig.ExtractedValueConfig;
 import org.keycloak.util.SystemPropertiesJsonParserFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.PublicKey;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
- * @author <a href="mailto:brad.culley@spartasystems.com">Brad Culley</a>
- * @author <a href="mailto:john.ament@spartasystems.com">John D. Ament</a>
  * @version $Revision: 1 $
  */
 public class KeycloakDeploymentBuilder {
@@ -78,11 +81,6 @@ public class KeycloakDeploymentBuilder {
         } else {
             deployment.setSslRequired(SslRequired.EXTERNAL);
         }
-
-        if (adapterConfig.getConfidentialPort() != -1) {
-            deployment.setConfidentialPort(adapterConfig.getConfidentialPort());
-        }
-
         if (adapterConfig.getTokenStore() != null) {
             deployment.setTokenStore(TokenStore.valueOf(adapterConfig.getTokenStore().toUpperCase()));
         } else {
@@ -103,12 +101,6 @@ public class KeycloakDeploymentBuilder {
             deployment.setCorsMaxAge(adapterConfig.getCorsMaxAge());
             deployment.setCorsAllowedHeaders(adapterConfig.getCorsAllowedHeaders());
             deployment.setCorsAllowedMethods(adapterConfig.getCorsAllowedMethods());
-            deployment.setCorsExposedHeaders(adapterConfig.getCorsExposedHeaders());
-        }
-
-        // https://tools.ietf.org/html/rfc7636
-        if (adapterConfig.isPkce()) {
-            deployment.setPkce(true);
         }
 
         deployment.setBearerOnly(adapterConfig.isBearerOnly());
@@ -120,8 +112,6 @@ public class KeycloakDeploymentBuilder {
         deployment.setTokenMinimumTimeToLive(adapterConfig.getTokenMinimumTimeToLive());
         deployment.setMinTimeBetweenJwksRequests(adapterConfig.getMinTimeBetweenJwksRequests());
         deployment.setPublicKeyCacheTtl(adapterConfig.getPublicKeyCacheTtl());
-        deployment.setIgnoreOAuthQueryParameter(adapterConfig.isIgnoreOAuthQueryParameter());
-        deployment.setRewriteRedirectRules(adapterConfig.getRedirectRewriteRules());
 
         if (realmKeyPem == null && adapterConfig.isBearerOnly() && adapterConfig.getAuthServerUrl() == null) {
             throw new IllegalArgumentException("For bearer auth, you must set the realm-public-key or auth-server-url");
@@ -143,6 +133,21 @@ public class KeycloakDeploymentBuilder {
             deployment.setPolicyEnforcer(new PolicyEnforcer(deployment, adapterConfig));
         }
 
+    	Map<String, Map<String, List<ExtractedValueConfig>>> extractedAttributes = deployment.getExtractedAttributes(); 
+    	if(policyEnforcerConfig!= null && extractedAttributes != null)
+    	{
+	        for(ExtractedAttributeConfig attribute: policyEnforcerConfig.getExtractedAttributes())
+	        {	       	
+	        	Map<String, List<ExtractedValueConfig>> method = extractedAttributes.get(attribute.getMethod());
+	        	if( method == null)
+	        	{
+	        		method = new HashMap<String, List<ExtractedValueConfig>>();	
+	        		extractedAttributes.put(attribute.getMethod(),method);
+	        	}
+	        	method.put(attribute.getOperation(), attribute.getValues());	
+	        }
+	    	deployment.setExtractedAttributes(extractedAttributes);
+    	}
         log.debug("Use authServerUrl: " + deployment.getAuthServerBaseUrl() + ", tokenUrl: " + deployment.getTokenUrl() + ", relativeUrls: " + deployment.getRelativeUrls());
         return deployment;
     }
